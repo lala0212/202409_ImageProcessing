@@ -24,21 +24,24 @@ struct Ybr
 	float Cr;
 };
 
+struct RGB Ybr2RGB(struct Ybr Ybr){
+    struct RGB RGB;
+    float tr = 1.164 * (Ybr.Y - 16) + 1.596 * (Ybr.Cr - 128);
+    float tg = 1.164 * (Ybr.Y - 16) - 0.392 * (Ybr.Cb - 128) - 0.813 * (Ybr.Cr - 128);
+    float tb = 1.164 * (Ybr.Y - 16) + 2.017 * (Ybr.Cb - 128);
+    RGB.R = (unsigned char)(tr > 255 ? 255 : (tr < 0 ? 0 : tr));
+    RGB.G = (unsigned char)(tg > 255 ? 255 : (tg < 0 ? 0 : tg));
+    RGB.B = (unsigned char)(tb > 255 ? 255 : (tb < 0 ? 0 : tb));
+    return RGB;
+}
 struct Ybr RGB2Ybr(struct RGB RGB){
     struct Ybr Ybr;
-
     Ybr.Y = 0.257 * (float)RGB.R + 0.504 * (float)RGB.G + 0.098*(float)RGB.B + 16;
     Ybr.Cb = -0.148 * (float)RGB.R - 0.291*(float)RGB.G + 0.439*(float)RGB.B + 128;
     Ybr.Cr = 0.439 * (float)RGB.R - 0.368*(float)RGB.G - 0.071*(float)RGB.B + 128;
     return Ybr;
 }
-struct RGB Ybr2RGB(struct Ybr Ybr){
-    struct RGB RGB;
-    RGB.R = (unsigned char) fmax(0, fmin(255, 1.164 * (Ybr.Y - 16) + 1.596 * (Ybr.Cr - 128)));
-    RGB.G = (unsigned char) fmax(0, fmin(255, 1.164 * (Ybr.Y - 16) - 0.392 * (Ybr.Cb - 128) - 0.813 * (Ybr.Cr - 128)));
-    RGB.B = (unsigned char) fmax(0, fmin(255, 1.164 * (Ybr.Y - 16) + 2.017 * (Ybr.Cb - 128)));
-    return RGB;
-}
+
 //read------------------------------------------------
 unsigned char *read_bmp (const char *filename) {
     sprintf(filename_in, "%s.%s", filename, "bmp");
@@ -125,7 +128,7 @@ void write_bmp( unsigned char *data){
     
     char filename_out[20]; 
     FILE *fp;
-    sprintf(filename_out, "output%s.%s", filename+5, "bmp");
+    sprintf(filename_out, "output%s.%s", "1", "bmp");
     fp = fopen(filename_out, "wb"); // 以二進位模式寫入檔案
     fwrite(header, sizeof(unsigned char), 54, fp); // 寫入 BMP 檔頭
     fwrite(data, sizeof(unsigned char), Size, fp); // 寫入圖像數據
@@ -135,10 +138,8 @@ void write_bmp( unsigned char *data){
 }
 
 int main() {
-    
-    printf("input file name(ex: input1):");
-    scanf("%s", filename); 
-    // const char *filename = "input1";  
+
+    const char *filename = "input1";  
     unsigned char *data = read_bmp (filename);
     printf("Gamma: ");
     scanf("%f", &Gamma); 

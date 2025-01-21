@@ -8,7 +8,7 @@ int height;
 int colorDepth;
 unsigned char header[54]; 
 char filename_in[20]; 
-char filename[10];
+char filename[20];
 int padding;
 float varR,varG,varB;
 struct RGB
@@ -30,9 +30,9 @@ struct RGB Ybr2RGB(struct Ybr Ybr){
     float tr = 1.164 * (Ybr.Y - 16) + 1.596 * (Ybr.Cr - 128);
     float tg = 1.164 * (Ybr.Y - 16) - 0.392 * (Ybr.Cb - 128) - 0.813 * (Ybr.Cr - 128);
     float tb = 1.164 * (Ybr.Y - 16) + 2.017 * (Ybr.Cb - 128);
-    RGB.R = (unsigned char)(tr > 255 ? 255 : (tr < 0 ? 0 : tr));
-    RGB.G = (unsigned char)(tg > 255 ? 255 : (tg < 0 ? 0 : tg));
-    RGB.B = (unsigned char)(tb > 255 ? 255 : (tb < 0 ? 0 : tb));
+    RGB.R = (unsigned char)fmax(0, fmin(255, tr));
+    RGB.G = (unsigned char)fmax(0, fmin(255, tg));
+    RGB.B = (unsigned char)fmax(0, fmin(255, tb));
     return RGB;
 }
 struct Ybr RGB2Ybr(struct RGB RGB){
@@ -45,7 +45,7 @@ struct Ybr RGB2Ybr(struct RGB RGB){
 
 //read------------------------------------------------
 struct RGB **read_bmp (const char *filename) {
-    sprintf(filename_in, "%s.%s", filename, "bmp");
+    sprintf(filename_in, "%s_1.%s", filename, "bmp");
     FILE *fp;
     fp = fopen(filename_in, "rb"); //read binary    
     fread(header, sizeof(unsigned char), 54, fp);  // (暫存,讀取單位,讀取個數,檔名)
@@ -67,65 +67,25 @@ struct RGB **read_bmp (const char *filename) {
     fclose(fp);
     return data;
 }
-float Mask[3][3]={{0,0,0},{0,1,0},{0,0,0}};
-float Mask1[3][3]={{-1,-1,-1},{-1,9,-1},{-1,-1,-1}};
-float Mask2[3][3] = {
-    {-1/16.0, -2/16.0, -1/16.0},
-    {-2/16.0, 12/16.0, -2/16.0},
-    {-1/16.0, -2/16.0, -1/16.0}
-};
-//Denoise Median_filter------------------------------------------------
-void Sharpness(struct RGB **data,int filter) {
-    int n = 1;
-    struct Ybr **padded_data = (struct Ybr**) malloc((height + 2*n) * sizeof(struct Ybr*));
-    for (int i = 0; i < height + 2*n; i++) {
-        padded_data[i] = (struct Ybr*)calloc(width + 2*n, sizeof(struct Ybr)); // 將所有欄位 (Y, Cb, Cr) 初始化為 0
-    }
+void L_Enhancement_Y(struct RGB **data, float Gamma) {
+    struct Ybr tmp2;
+
     for (int i = 0; i < height; i++) {
         for (int j = 0; j < width; j++) {
-            padded_data[i + n][j + n] = RGB2Ybr(data[i][j]);
+            tmp2 = RGB2Ybr(data[i][j]);
+            // Y 分量增強 (L型增強)，使用 Gamma 校正
+            tmp2.Y = pow(tmp2.Y / 235.0, Gamma) * 235.0;
+            tmp2.Y = (tmp2.Y < 16.0) ? 16.0 : (tmp2.Y > 235.0) ? 235.0 : tmp2.Y;
+            data[i][j] = Ybr2RGB(tmp2);
         }
     }
-    //padding
-    for (int i = 0; i < n; i++) {
-        memcpy(padded_data[i], padded_data[n], (width + 2 * n) * sizeof(struct Ybr));
-        memcpy(padded_data[height + n + i], padded_data[height + n - 1], (width + 2 * n) * sizeof(struct Ybr));
-    }
-    for (int i = 0; i < height + 2 * n; i++) {
-        for (int j = 0; j < n; j++) {
-            padded_data[i][j] = padded_data[i][n];
-            padded_data[i][width + n + j] = padded_data[i][width + n - 1];
-        }
-    }
-    
-    for (int i = 0; i <height; i++) {
-        for (int j = 0; j <width; j++) {
-            float tmp = 0;
-            struct Ybr data_tmp;
-            for (int di = -n; di <=n; di++) {
-                for (int dj = -n; dj <=n; dj++) {
-                    if (filter ==1){
-                        tmp += padded_data[n+i+di][n+j+dj].Y*Mask1[n+di][n+dj];
-                    }
-                    else{
-                        tmp += padded_data[n+i+di][n+j+dj].Y*Mask[n+di][n+dj]+15*padded_data[n+i+di][n+j+dj].Y*Mask2[n+di][n+dj];
-                    }
-                }
-            }
-            data_tmp.Y = tmp;
-            data_tmp.Cb = padded_data[n+i][n+j].Cb;
-            data_tmp.Cr = padded_data[n+i][n+j].Cr;
-            data[i][j] = Ybr2RGB(data_tmp);
-        }
-    }   
- 
 }
-
 //write------------------------------------------------
-void write_bmp( struct RGB **data,int num){
-    char filename_out[20]; 
+void write_bmp( struct RGB **data,int index,int num){
+    
+    char filename_out[25]; 
     FILE *fp;
-    sprintf(filename_out, "output%s_%d.%s", filename+5, num,"bmp");
+    sprintf(filename_out, "output%d_%d.%s", index, num,"bmp");
     fp = fopen(filename_out, "wb"); // 以二進位模式寫入檔案
     fwrite(header, sizeof(unsigned char), 54, fp); // 寫入 BMP 檔頭
     // Write pixel data row by row
@@ -143,12 +103,16 @@ void write_bmp( struct RGB **data,int num){
 }
 
 int main() {
-    strcpy(filename, "input2");
-    struct RGB **data = read_bmp (filename);
-    Sharpness(data,1);
-    write_bmp(data,1);
-    data = read_bmp (filename);
-    Sharpness(data,2);
-    write_bmp(data,2);
+    float g[4] = {0.7, 1.3, 1.1, 1.6};
+    struct RGB **data;
+    const char *filenames[4] = {"output1", "output2", "output3", "output4"};
+    
+    for (int i = 0; i < 4; i++) {
+        char filename[30];  // 用來存儲完整檔案名稱
+        data = read_bmp(filenames[i]); 
+        L_Enhancement_Y(data, g[i]);
+        write_bmp(data,i+1,2);
+    }
+
     return 0;
 }
